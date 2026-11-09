@@ -1775,6 +1775,20 @@ actions remain visible beside the compact sidebar on narrow screens.
 
 ### Skills & Tools
 
+**Human approval for high-risk tools**: Set `hitl_approval.enabled: true` and
+list tools such as `write_file`, `str_replace`, or `bash` in `config.yaml` to
+pause matching calls before execution. The Web UI shows an approval card for
+each action; approval attempts execution under the existing guardrails and
+sandbox authorization, while rejection returns the reason to the agent without
+running the tool. Non-interactive runs follow `hitl_approval.non_interactive`;
+subagents and runtimes without resume support always fail closed.
+
+Pending approvals do not expire and block new runs on the same thread until
+resolved. Long argument values may be truncated in the display, but approval
+executes the original complete arguments. The feature is disabled by default.
+See [HITL Tool Approval](backend/docs/CONFIGURATION.md#hitl-tool-approval) for
+configuration and safety semantics.
+
 Agents can call the read-only `inspect_run_status` tool to inspect visible run
 token usage, message and tool-call counts, an approximate context-window fill,
 and whether a summary or unfinished to-dos exist. It returns counts only, not
@@ -2634,6 +2648,8 @@ requests.
 When the agent asks for clarification, the Web UI shows the structured response card but keeps the normal composer available. Users can complete the card or send a free-form chat message to bypass it; that message closes the latest pending clarification and becomes the agent's next input. Accompanying answer text stays outside the execution steps panel, and answering the request keeps previously completed text in the conversation while the agent continues.
 
 Unsent Web UI composer drafts survive page reloads and switching between conversations within the same browser tab. Drafts are isolated by user, agent, and conversation, include the selected skill and explicit conversation references, and are cleared once a send is accepted. Project documents already attached to the thread also survive reloads; browser-local uploads and quoted message excerpts are not persisted.
+
+The composer's paperclip button opens the local file chooser directly; the `@` button opens the reference picker for skills, project files, conversations, and plugins.
 
 If an attachment upload reports `success: false`, the Web UI stops the send even when the HTTP response is 200. The upload error is shown and the composer keeps its draft and attachments for correction or retry. Files already accepted by a partially successful upload remain on the server; this does not roll them back.
 
