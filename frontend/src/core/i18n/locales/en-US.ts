@@ -1691,6 +1691,13 @@ export const enUS: Translations = {
         wecom: "WeCom",
       },
     },
+    streamError: {
+      requestFailed: "Request failed.",
+      // The SDK's non-2xx message is "HTTP <status>: <raw body>"; the body is
+      // never shown, only the status the user can quote to support.
+      serverUnavailable:
+        "Service temporarily unavailable (HTTP {status}). Please try again later.",
+    },
   },
 
   // Sidecar

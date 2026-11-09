@@ -1594,6 +1594,10 @@ export const zhCN: Translations = {
         wecom: "企业微信",
       },
     },
+    streamError: {
+      requestFailed: "请求失败。",
+      serverUnavailable: "服务暂时不可用（HTTP {status}），请稍后重试。",
+    },
   },
 
   // Sidecar

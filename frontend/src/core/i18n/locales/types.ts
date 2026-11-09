@@ -1390,6 +1390,11 @@ export interface Translations {
         wecom: string;
       };
     };
+    streamError: {
+      requestFailed: string;
+      /** A 5xx reply: "Service temporarily unavailable (HTTP {status})". */
+      serverUnavailable: string;
+    };
   };
 
   // Sidecar

@@ -30,6 +30,7 @@ import { getBackendBaseURL } from "../config";
 import { useRunInputsEnabled } from "../features";
 import { useI18n } from "../i18n/hooks";
 import type { Locale } from "../i18n/locale";
+import type { Translations } from "../i18n/locales";
 import { getMessageRunId, parseRunStartTime } from "../messages/run-duration";
 import { isErrorToolMessage } from "../messages/tool-error";
 import { indexToolResults } from "../messages/tool-result";
@@ -1911,27 +1912,54 @@ export async function stopThreadAndInvalidateCaches(
   }
 }
 
-function getStreamErrorMessage(error: unknown): string {
+function getStreamErrorMessage(
+  error: unknown,
+  messages?: Translations["threads"]["streamError"],
+): string {
   if (typeof error === "string" && error.trim()) {
     return error;
   }
   if (error instanceof Error && error.message.trim()) {
-    return error.message;
+    return describeStreamError(error, messages);
   }
   if (typeof error === "object" && error !== null) {
     const message = Reflect.get(error, "message");
     if (typeof message === "string" && message.trim()) {
-      return message;
+      return describeStreamError(error, messages, message);
     }
     const nestedError = Reflect.get(error, "error");
     if (nestedError instanceof Error && nestedError.message.trim()) {
-      return nestedError.message;
+      return describeStreamError(nestedError, messages);
     }
     if (typeof nestedError === "string" && nestedError.trim()) {
-      return nestedError;
+      return describeStreamError(error, messages, nestedError);
     }
   }
-  return "Request failed.";
+  return messages?.requestFailed ?? "Request failed.";
+}
+
+/**
+ * A 5xx response carries the raw gateway body in the SDK message
+ * (`HTTP 502: {"detail":"..."}`), which is unreadable for the user and leaks
+ * internals. Replace it with localized copy that keeps only the status code
+ * they can quote to support; 4xx and non-HTTP failures stay verbatim.
+ */
+function describeStreamError(
+  error: unknown,
+  messages: Translations["threads"]["streamError"] | undefined,
+  rawMessage?: string,
+): string {
+  const message = rawMessage ?? (error instanceof Error ? error.message : "");
+  const status = getHttpStatus(error) ?? parseHttpStatus(message);
+  if (status === undefined || status < 500 || !messages) {
+    return message;
+  }
+  return messages.serverUnavailable.replace("{status}", String(status));
+}
+
+function parseHttpStatus(message: string): number | undefined {
+  const match = /^HTTP (\d{3})\b/.exec(message.trim());
+  return match ? Number(match[1]) : undefined;
 }
 
 async function readResponseErrorMessage(
@@ -1988,6 +2016,10 @@ export function useThreadStream({
   onFinish,
 }: ThreadStreamOptions) {
   const { t, locale } = useI18n();
+  // Callbacks read the live translation list from a ref: a per-render object
+  // identity in a hook dependency array would rebuild every consumer.
+  const streamErrorMessageRef = useRef(t.threads?.streamError);
+  streamErrorMessageRef.current = t.threads?.streamError;
   const currentViewThreadId = displayThreadId ?? threadId ?? null;
   const currentViewThreadIdRef = useRef(currentViewThreadId);
   currentViewThreadIdRef.current = currentViewThreadId;
@@ -2342,7 +2374,7 @@ export function useThreadStream({
       pendingPreparedReplayRef.current = null;
       setPendingSupersededRunIds(new Set());
       setPendingSupersededMessageIds(new Set());
-      toast.error(getStreamErrorMessage(error));
+      toast.error(getStreamErrorMessage(error, streamErrorMessageRef.current));
       pendingUsageBaselineMessageIdsRef.current = new Set(
         messagesRef.current
           .map(messageIdentity)
@@ -3141,7 +3173,9 @@ export function useThreadStream({
             removeSetItems(current, preparedSupersededMessageIds),
           );
         }
-        toast.error(getStreamErrorMessage(error));
+        toast.error(
+          getStreamErrorMessage(error, streamErrorMessageRef.current),
+        );
         return false;
       } finally {
         sendInFlightRef.current = false;
