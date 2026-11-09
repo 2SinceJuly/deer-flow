@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Hashable
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
@@ -63,6 +64,18 @@ class SqlManagedSubagentStore(ManagedSubagentStore):
             if row is None:
                 raise FileNotFoundError(f"Managed subagent not found: {definition.name}")
             row.definition = definition.model_dump(mode="json")
+            # signature() reads updated_at, so an update that lands inside the same
+            # clock tick as the stored stamp leaves the signature unchanged and the
+            # write invisible to peers. Advance the stamp past the stored value when
+            # the clock has not moved beyond it.
+            now = datetime.now(UTC)
+            current = row.updated_at
+            if current is not None:
+                if current.tzinfo is None:
+                    current = current.replace(tzinfo=UTC)
+                if now <= current:
+                    now = current + timedelta(microseconds=1)
+            row.updated_at = now
             session.commit()
 
     def delete(self, name: str) -> bool:

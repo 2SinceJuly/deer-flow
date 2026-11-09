@@ -109,6 +109,31 @@ def test_sql_signature_detects_update_behind_existing_max_timestamp(sql_store):
     assert sql_store.signature() != before
 
 
+def test_sql_signature_detects_an_update_inside_the_stored_clock_tick(sql_store, monkeypatch):
+    """A write must move signature() even when the clock cannot advance.
+
+    updated_at drives the signature, so a definition rewritten inside the same clock
+    tick as the stored stamp would otherwise leave the tuple identical and the write
+    invisible to any peer holding the previous signature. Windows' default timer
+    resolution makes two writes inside one tick ordinary rather than exotic.
+    """
+    sql_store.create(_definition("writer"))
+
+    frozen = datetime.now(UTC)
+    monkeypatch.setattr("deerflow.persistence.managed_subagents.model.datetime", SimpleNamespace(now=lambda tz=None: frozen, UTC=UTC))
+
+    with sql_store._Session() as session:
+        row = session.execute(select(ManagedSubagentRow).where(ManagedSubagentRow.name == "writer")).scalar_one()
+        row.updated_at = frozen
+        session.commit()
+
+    before = sql_store.signature()
+    sql_store.update(sql_store.get("writer").model_copy(update={"description": "Same tick"}))
+
+    assert sql_store.get("writer").description == "Same tick"
+    assert sql_store.signature() != before
+
+
 @pytest.mark.parametrize("store_fixture", ["file_store", "sql_store"])
 def test_duplicate_create_is_a_conflict(request, store_fixture):
     store = request.getfixturevalue(store_fixture)
