@@ -225,6 +225,9 @@ async def current_approval_request_ids(
     return _approval_request_ids(payloads[0]) if payloads else None
 
 
+_SENTINEL = object()
+
+
 async def validate_resume_request(*, request: Any, thread_id: str, accessor: Any, read_config: dict[str, Any], enabled: bool, body: Any) -> dict[str, str] | None:
     """Validate a command.resume against the current pause, or raise 409/422.
 
@@ -232,6 +235,11 @@ async def validate_resume_request(*, request: Any, thread_id: str, accessor: Any
     unchanged. All-reject remains the escape hatch for the validated pause when
     the feature is disabled or the payload was lost; attachment later verifies
     that checkpoint-only recovery still targets that same pause.
+
+    All-reject also clears a pause whose *stored* payload is itself unaddressable
+    (a pre-#8070 payload whose request ids cannot be extracted). Such a pause can
+    only ever be rejected, so clearing it approves nothing; ``_SENTINEL`` tells the
+    attachment path to skip the identity compare-and-swap that cannot apply.
     """
     snapshot = await accessor.aget(read_config)
     responses = _responses_of(getattr(body, "command", None))
@@ -249,7 +257,16 @@ async def validate_resume_request(*, request: Any, thread_id: str, accessor: Any
 
     if responses is None:
         raise _error(422, "invalid_approval_response", "resume must carry a 'responses' list for hitl_approval")
-    expected_request_ids = _approval_request_ids(payloads[0])
+    try:
+        expected_request_ids = _approval_request_ids(payloads[0])
+    except HTTPException:
+        # The stored pause predates the identity binding, so nothing can be
+        # matched against it. Only all-reject may dismiss it: the middleware
+        # already fails closed on the unaddressable payload, so the run settles
+        # without executing the calls.
+        if not all_reject:
+            raise
+        return _SENTINEL
     expected_ids = list(expected_request_ids)
     expected_set = set(expected_ids)
     if len(responses) != len(expected_ids):
@@ -282,6 +299,11 @@ async def validate_resume_request(*, request: Any, thread_id: str, accessor: Any
     if requested_checkpoint_id and head_checkpoint_id and str(requested_checkpoint_id) != str(head_checkpoint_id):
         raise _error(422, "checkpoint_not_head", "A resume must target the current head checkpoint, never an older pause checkpoint")
     return expected_request_ids
+
+
+def is_unaddressable_recovery(validated: dict[str, str] | object | None) -> bool:
+    """Whether validation cleared a pause whose stored payload had no usable identity."""
+    return validated is _SENTINEL
 
 
 async def reject_new_run_when_approval_pending(

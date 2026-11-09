@@ -568,6 +568,75 @@ async def test_generic_interrupt_resume_admission_survives_head_moving_state_upd
 
 
 @pytest.mark.asyncio
+async def test_all_reject_clears_a_pause_whose_stored_payload_is_unaddressable(monkeypatch):
+    """A pre-#8070 pause stores no usable identity; only all-reject may dismiss it.
+
+    There is nothing addressable to approve, so clearing it approves nothing. A
+    mixed or approve response must still be refused, and a valid pause keeps the
+    identity compare-and-swap.
+    """
+    from app.gateway.hitl_approval import _SENTINEL, validate_resume_request
+
+    class EmptyRunStore:
+        async def list_by_thread(self, thread_id, limit):
+            return []
+
+    async def resolved(value):
+        return value
+
+    # Pre-#8070 payload: a duplicated id in `pending_tool_call_ids` and an action
+    # without a usable `tool_call_id`, so `_approval_request_ids` raises 422.
+    broken_payload = {
+        "kind": "hitl_approval",
+        "version": 1,
+        "request_id": "approval-1",
+        "pending_tool_call_ids": ["call_hitl_1", "call_hitl_1"],
+        "actions": [
+            {"tool_call_id": "call_hitl_1", "request_id": "request-1", "option_id": "approve"},
+            {"tool_call_id": None, "request_id": "request-2", "option_id": "reject"},
+        ],
+    }
+
+    monkeypatch.setattr("app.gateway.deps.get_run_store", lambda request: EmptyRunStore())
+    monkeypatch.setattr(
+        "app.gateway.hitl_approval.find_pending_interrupts",
+        lambda *args, **kwargs: resolved({"task": [SimpleNamespace(value=broken_payload)]}),
+    )
+    monkeypatch.setattr("app.gateway.hitl_approval.has_waiting_for_input_run", lambda *a, **k: resolved(False))
+    monkeypatch.setattr("app.gateway.hitl_approval.has_any_pending_interrupt", lambda *a, **k: resolved(True))
+    accessor = SimpleNamespace(aget=lambda *a, **k: resolved(SimpleNamespace(config={"configurable": {}}, next=())))
+
+    def body_for(responses):
+        return SimpleNamespace(command={"resume": {"responses": responses}})
+
+    async def validate(responses):
+        return await validate_resume_request(
+            request=SimpleNamespace(),
+            thread_id="wedged",
+            accessor=accessor,
+            read_config={},
+            enabled=True,
+            body=body_for(responses),
+        )
+
+    with pytest.raises(Exception) as approve_error:
+        await validate([{"option_id": "approve", "tool_call_id": "call_hitl_1", "request_id": "request-1"}])
+    assert getattr(approve_error.value, "status_code", None) == 422
+
+    with pytest.raises(Exception) as mixed_error:
+        await validate(
+            [
+                {"option_id": "approve", "tool_call_id": "call_hitl_1", "request_id": "request-1"},
+                {"option_id": "reject", "tool_call_id": "call_hitl_1", "request_id": "request-2"},
+            ]
+        )
+    assert getattr(mixed_error.value, "status_code", None) == 422
+
+    all_reject = await validate([{"option_id": "reject", "tool_call_id": "call_hitl_1", "request_id": "request-1"}])
+    assert all_reject is _SENTINEL
+
+
+@pytest.mark.asyncio
 async def test_mark_approval_answered_preserves_idempotency_fields(monkeypatch):
     from app.gateway.hitl_approval import mark_approval_answered
     from deerflow.runtime.runs.store.memory import MemoryRunStore
