@@ -785,6 +785,148 @@ async def test_deferred_error_stream_frames_follow_durable_terminal_status():
 
 
 @pytest.mark.anyio
+async def test_delivery_failure_publishes_error_frame_before_end(monkeypatch):
+    events = MemoryRunEventStore()
+    order: list[str] = []
+    published: list[dict] = []
+
+    class OrderingRunStore(MemoryRunStore):
+        async def update_status(self, run_id, status, *, error=None, stop_reason=None):
+            result = await super().update_status(
+                run_id,
+                status,
+                error=error,
+                stop_reason=stop_reason,
+            )
+            if status == "error":
+                order.append("durable-error")
+            return result
+
+    class OrderingBridge:
+        async def publish(self, _run_id, event, data):
+            if event == "error":
+                order.append("stream-error")
+                published.append(data)
+
+        async def publish_end(self, _run_id):
+            order.append("stream-end")
+
+        async def cleanup(self, _run_id, *, delay=0):
+            del delay
+
+    monkeypatch.setattr(
+        "deerflow.runtime.runs.worker._produced_output_paths",
+        AsyncMock(return_value=["/mnt/user-data/outputs/report.md"]),
+    )
+
+    class ProseOnlyAgent:
+        async def astream(self, graph_input, config=None, stream_mode=None, subgraphs=False):
+            yield {"messages": [AIMessage(content="SESSION SUMMARY")]}
+
+    run_manager = RunManager(store=OrderingRunStore())
+    record = await run_manager.create("thread-1")
+
+    await run_agent(
+        OrderingBridge(),
+        run_manager,
+        record,
+        ctx=RunContext(checkpointer=None, event_store=events),
+        agent_factory=lambda *, config: ProseOnlyAgent(),
+        graph_input={},
+        config={},
+    )
+
+    assert record.status == RunStatus.error
+    assert order == ["durable-error", "stream-error", "stream-end"]
+    assert published == [
+        {
+            "name": "RunError",
+            "message": "Artifact delivery incomplete: no produced output artifact was presented",
+        }
+    ]
+
+
+@pytest.mark.anyio
+async def test_delivery_receipt_downgrade_publishes_error_frame_before_end(monkeypatch):
+    order: list[str] = []
+    published: list[dict] = []
+
+    class FailingReceiptStore(MemoryRunEventStore):
+        async def put_if_absent(self, **kwargs):
+            raise RuntimeError("event store unavailable")
+
+    class OrderingRunStore(MemoryRunStore):
+        async def update_status(self, run_id, status, *, error=None, stop_reason=None):
+            result = await super().update_status(
+                run_id,
+                status,
+                error=error,
+                stop_reason=stop_reason,
+            )
+            if status == "error":
+                order.append("durable-error")
+            return result
+
+    class OrderingBridge:
+        async def publish(self, _run_id, event, data):
+            if event == "error":
+                order.append("stream-error")
+                published.append(data)
+
+        async def publish_end(self, _run_id):
+            order.append("stream-end")
+
+        async def cleanup(self, _run_id, *, delay=0):
+            del delay
+
+    monkeypatch.setattr(
+        "deerflow.runtime.runs.worker._produced_output_paths",
+        AsyncMock(return_value=["/mnt/user-data/outputs/report.md"]),
+    )
+
+    class PresentingAgent:
+        async def astream(self, graph_input, config=None, stream_mode=None, subgraphs=False):
+            journal = config["context"]["__run_journal"]
+            journal._remember_current_run_tool_calls(
+                AIMessage(content="", tool_calls=[{"id": "call_1", "name": "present_files", "args": {}}]),
+                caller="lead_agent",
+            )
+            journal.on_tool_end(
+                Command(
+                    update={
+                        "artifacts": ["/mnt/user-data/outputs/report.md"],
+                        "messages": [ToolMessage("Successfully presented files", tool_call_id="call_1")],
+                    }
+                ),
+                run_id=uuid4(),
+            )
+            yield {"messages": []}
+
+    run_manager = RunManager(store=OrderingRunStore())
+    record = await run_manager.create("thread-1")
+
+    await run_agent(
+        OrderingBridge(),
+        run_manager,
+        record,
+        ctx=RunContext(checkpointer=None, event_store=FailingReceiptStore()),
+        agent_factory=lambda *, config: PresentingAgent(),
+        graph_input={},
+        config={},
+    )
+
+    assert record.status == RunStatus.error
+    assert record.error == "Artifact delivery verification failed: terminal delivery receipt could not be persisted"
+    assert order == ["durable-error", "stream-error", "stream-end"]
+    assert published == [
+        {
+            "name": "RunError",
+            "message": "Artifact delivery verification failed: terminal delivery receipt could not be persisted",
+        }
+    ]
+
+
+@pytest.mark.anyio
 async def test_delivery_write_retries_before_persisting_success():
     class FlakyReceiptStore(MemoryRunEventStore):
         def __init__(self):

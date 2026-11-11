@@ -1907,6 +1907,12 @@ async def run_agent(
             )
             if cancel_action is not None:
                 await _finish_cancellation(cancel_action)
+            elif delivery_error is not None and not record.ownership_lost:
+                # The durable status is staged here and confirmed in ``finally``,
+                # which publishes terminal frames only after that confirmation.
+                # Defer the frame the same way the exception branch does so the
+                # stream reports the delivery failure instead of ending clean.
+                terminal_error_frame = {"name": "RunError", "message": delivery_error}
 
     except asyncio.CancelledError:
         await _finish_cancellation(record.abort_action)
@@ -2084,6 +2090,9 @@ async def run_agent(
                     receipt_persisted = await _persist_delivery_receipt(event_store, thread_id=thread_id, run_id=run_id, content=delivery_content)
                     if produced_output_paths and record.status == RunStatus.success and not receipt_persisted:
                         await run_manager.set_status(run_id, RunStatus.error, error=_DELIVERY_RECEIPT_FAILED_ERROR, persist=False)
+                        # Same downgrade on both surfaces: the stream carries the
+                        # error frame the durable row now reports.
+                        terminal_error_frame = {"name": "RunError", "message": _DELIVERY_RECEIPT_FAILED_ERROR}
 
                 if not record.ownership_lost and journal is not None and persist_completion:
                     try:
