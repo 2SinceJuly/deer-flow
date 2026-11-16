@@ -872,6 +872,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+boxlite = [
+    { name = "deerflow-harness", extra = ["boxlite"] },
+]
 browser = [
     { name = "deerflow-harness", extra = ["browser"] },
 ]
@@ -890,11 +893,17 @@ monocle = [
 ollama = [
     { name = "deerflow-harness", extra = ["ollama"] },
 ]
+opensandbox = [
+    { name = "deerflow-harness", extra = ["opensandbox"] },
+]
 postgres = [
     { name = "deerflow-harness", extra = ["postgres"] },
 ]
 redis = [
     { name = "deerflow-harness", extra = ["redis"] },
+]
+tenki = [
+    { name = "deerflow-harness", extra = ["tenki"] },
 ]
 
 [package.dev-dependencies]
@@ -920,12 +929,15 @@ requires-dist = [
     { name = "coincurve", marker = "extra == 'buzz'", specifier = ">=20.0.0" },
     { name = "deerflow-extension-api", editable = "packages/extension-api" },
     { name = "deerflow-harness", editable = "packages/harness" },
+    { name = "deerflow-harness", extras = ["boxlite"], marker = "extra == 'boxlite'", editable = "packages/harness" },
     { name = "deerflow-harness", extras = ["browser"], marker = "extra == 'browser'", editable = "packages/harness" },
     { name = "deerflow-harness", extras = ["memory-zh"], marker = "extra == 'memory-zh'", editable = "packages/harness" },
     { name = "deerflow-harness", extras = ["monocle"], marker = "extra == 'monocle'", editable = "packages/harness" },
     { name = "deerflow-harness", extras = ["ollama"], marker = "extra == 'ollama'", editable = "packages/harness" },
+    { name = "deerflow-harness", extras = ["opensandbox"], marker = "extra == 'opensandbox'", editable = "packages/harness" },
     { name = "deerflow-harness", extras = ["postgres"], marker = "extra == 'postgres'", editable = "packages/harness" },
     { name = "deerflow-harness", extras = ["redis"], marker = "extra == 'redis'", editable = "packages/harness" },
+    { name = "deerflow-harness", extras = ["tenki"], marker = "extra == 'tenki'", editable = "packages/harness" },
     { name = "dingtalk-stream", specifier = ">=0.24.3" },
     { name = "discord-py", marker = "extra == 'discord'", specifier = ">=2.7.0" },
     { name = "e2b-code-interpreter", specifier = ">=2.8.1" },
@@ -945,7 +957,7 @@ requires-dist = [
     { name = "websockets", specifier = ">=16.0,<17" },
     { name = "wecom-aibot-python-sdk", specifier = ">=0.1.6" },
 ]
-provides-extras = ["postgres", "redis", "discord", "buzz", "monocle", "ollama", "browser", "memory-zh"]
+provides-extras = ["postgres", "redis", "discord", "buzz", "monocle", "ollama", "browser", "memory-zh", "opensandbox", "boxlite", "tenki"]
 
 [package.metadata.requires-dev]
 dev = [

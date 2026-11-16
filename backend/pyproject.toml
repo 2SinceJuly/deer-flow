@@ -51,6 +51,13 @@ monocle = ["deerflow-harness[monocle]"]
 ollama = ["deerflow-harness[ollama]"]
 browser = ["deerflow-harness[browser]"]
 memory-zh = ["deerflow-harness[memory-zh]"]
+# Remote sandbox providers keep their SDK optional in the harness; re-export the
+# extras here so the backend image can select them with `UV_EXTRAS=<name>`.
+# `backend/Dockerfile` installs with `uv sync --locked --extra`, which only
+# accepts extras this table declares, and the version then comes from uv.lock.
+opensandbox = ["deerflow-harness[opensandbox]"]
+boxlite = ["deerflow-harness[boxlite]"]
+tenki = ["deerflow-harness[tenki]"]
 
 [dependency-groups]
 # Managed extension packages are added here by `deerflow extensions install`.
