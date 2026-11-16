@@ -84,6 +84,12 @@ def _token_spans(folded: str):
         if re.search(r"[\u3400-\u9fff]", word):
             for index in range(max(1, len(word) - 1)):
                 yield word[index : index + 2], match.start() + index, match.start() + min(index + 2, len(word))
+            # Also index each Latin run whole. A query tokenizes as its own word,
+            # so without this "\u91c7\u8d2dThinkPad" never indexes "thinkpad" and an exact
+            # English query cannot match text the active substring search finds.
+            for run in re.finditer(r"[^㐀-鿿]+", word):
+                if len(run.group()) > 1:
+                    yield run.group(), match.start() + run.start(), match.start() + run.end()
         else:
             yield word, match.start(), match.end()
 

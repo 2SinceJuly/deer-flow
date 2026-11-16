@@ -1093,3 +1093,17 @@ def test_repeated_archive_sources_keep_canonical_read_version(role_runtime):
     assert row["truncated"] is source["truncated"] is True
     assert source["text"] == text[:1000]
     assert row["excerpt"] == source["text"][row["excerpt_start"] : row["excerpt_end"]]
+
+
+@pytest.mark.parametrize("archived", [False, True])
+def test_english_word_embedded_in_cjk_is_searchable_by_exact_spelling(role_runtime, archived):
+    import json
+
+    text = "请记住：采购ThinkPad电脑的预算为6000元。"
+    message = HumanMessage(content=text, id="mixed-script")
+    role_runtime.state = {"messages": [message]}
+    if archived:
+        role_runtime.state = {"task_history": archive.capture({}, role_runtime, [message], TaskContinuityConfig(enabled=True))}
+    row = json.loads(history_search.invoke({"runtime": role_runtime, "query": "ThinkPad", "role": "user"}))["results"][0]
+    assert row["excerpt_match"] is True
+    assert "采购ThinkPad电脑" in row["excerpt"]
