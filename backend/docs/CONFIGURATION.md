@@ -1677,6 +1677,18 @@ Install the optional SDK before selecting this provider:
 pip install "deerflow-harness[opensandbox]"
 ```
 
+The published `deer-flow-backend` image is built with `UV_EXTRAS=postgres` only,
+so it does not contain the SDK. To bake it in from the lock, build with the
+backend extra of the same name:
+
+```bash
+docker build -f backend/Dockerfile --build-arg UV_EXTRAS=opensandbox .
+```
+
+`boxlite` and `tenki` are re-exported the same way. Installing into a running
+container with `pip` is not equivalent: it bypasses `uv.lock` and the production
+image has no compiler toolchain.
+
 The provider creates a sandbox per effective user/thread scope and parks it in
 an in-process warm pool after each turn. The same scope can reclaim it after a
 health check; another user or thread cannot. Create-time readiness and

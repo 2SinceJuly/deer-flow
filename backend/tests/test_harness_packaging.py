@@ -96,3 +96,25 @@ def test_locked_install_accepts_each_remote_sandbox_extra(tmp_path: Path) -> Non
             pytest.skip(f"offline uv cannot resolve {extra}: {combined.strip()[-200:]}")
         assert result.returncode == 0, combined
         assert "is not defined in the `optional-dependencies` table" not in combined
+
+
+# Where the provider tells readers how to install its SDK. Both name the image
+# path, because `pip install` alone leaves container users with the published
+# image, which is built with `UV_EXTRAS=postgres` only.
+INSTALL_DOCS = (
+    Path("docs") / "CONFIGURATION.md",
+    Path("packages") / "harness" / "deerflow" / "community" / "opensandbox" / "README.md",
+)
+
+
+@pytest.mark.parametrize("doc", INSTALL_DOCS, ids=lambda p: p.name)
+def test_opensandbox_install_docs_name_the_image_path(doc: Path) -> None:
+    """The documented image build selects the extra the backend now declares.
+
+    ``pip install`` is not an option inside the production image, so a docs page
+    that only shows it sends container users to an install the image cannot do.
+    """
+    text = (BACKEND_ROOT / doc).read_text(encoding="utf-8")
+
+    assert 'pip install "deerflow-harness[opensandbox]"' in text
+    assert "--build-arg UV_EXTRAS=opensandbox" in text

@@ -12,6 +12,13 @@ Install the optional SDK, then select the provider:
 pip install "deerflow-harness[opensandbox]"
 ```
 
+The published `deer-flow-backend` image ships without it. To use the provider in
+a container, build the image with the backend extra of the same name:
+
+```bash
+docker build -f backend/Dockerfile --build-arg UV_EXTRAS=opensandbox .
+```
+
 ```yaml
 sandbox:
   use: deerflow.community.opensandbox:OpenSandboxProvider
