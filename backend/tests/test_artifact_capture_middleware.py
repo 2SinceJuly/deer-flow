@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langgraph.config import var_child_runnable_config
 
 from deerflow.agents.middlewares.artifact_capture_middleware import ArtifactCaptureMiddleware
 from deerflow.agents.thread_state import merge_artifacts, merge_tool_artifacts
@@ -390,3 +391,79 @@ class TestCapture:
         assert generate_handle("thread_1", "call_fresh", 0) in handles, "fresh capture was dropped"
         consumed = next(entry for entry in out["tool_artifacts"] if entry["handle"] == existing_handle)
         assert consumed["consumed_by"] == ["call_new"], "consumption update was dropped"
+
+
+class TestConfigurableThreadIdFallback:
+    """The SDK path supplies the thread id through ``config.configurable``.
+
+    ``ThreadDataMiddleware`` already accepts either carrier; the artifact
+    middleware only read runtime context, so a successful tool whose result
+    carried a valid path produced no ``tool_artifacts`` entry and the model
+    never saw the reference.
+    """
+
+    @staticmethod
+    def _in_run(config: dict, runtime, middleware: ArtifactCaptureMiddleware, msg: ToolMessage) -> dict | None:
+        token = var_child_runnable_config.set(config)
+        try:
+            return middleware.before_model({"messages": [msg]}, runtime)
+        finally:
+            var_child_runnable_config.reset(token)
+
+    def test_captures_when_thread_id_comes_from_config(self):
+        msg = _tool_message(
+            "wrote file",
+            artifact={"structured_content": {"file": "/tmp/deerflow-order/notebooks.csv"}},
+        )
+        out = self._in_run(
+            {"configurable": {"thread_id": "notebook-order"}},
+            SimpleNamespace(context=None),
+            ArtifactCaptureMiddleware(),
+            msg,
+        )
+
+        assert out is not None, "capture was skipped without a runtime-context thread id"
+        (entry,) = out["tool_artifacts"]
+        assert entry["real_ref"] == "/tmp/deerflow-order/notebooks.csv"
+        assert entry["handle"] == generate_handle("notebook-order", "call_1", 0)
+
+    def test_runtime_context_still_wins_over_config(self):
+        msg = _tool_message(
+            "wrote file",
+            artifact={"structured_content": {"file": "/mnt/user-data/outputs/report.md"}},
+        )
+        out = self._in_run(
+            {"configurable": {"thread_id": "from-config"}},
+            _runtime("from-context"),
+            ArtifactCaptureMiddleware(),
+            msg,
+        )
+
+        assert out is not None
+        assert out["tool_artifacts"][0]["handle"] == generate_handle("from-context", "call_1", 0)
+
+    def test_no_thread_id_anywhere_still_skips_capture(self):
+        msg = _tool_message(
+            "wrote file",
+            artifact={"structured_content": {"file": "/mnt/user-data/outputs/report.md"}},
+        )
+        out = self._in_run(
+            {"configurable": {}},
+            SimpleNamespace(context=None),
+            ArtifactCaptureMiddleware(),
+            msg,
+        )
+
+        assert out is None or "tool_artifacts" not in (out or {})
+
+    def test_absent_runnable_context_does_not_raise(self):
+        """``get_config()`` raises outside a runnable context; the hook must still work."""
+        msg = _tool_message(
+            "wrote file",
+            artifact={"structured_content": {"file": "/mnt/user-data/outputs/report.md"}},
+        )
+        # Standalone hook callers (and tests) invoke before_model with no Runnable context at all.
+        out = ArtifactCaptureMiddleware().before_model({"messages": [msg]}, _runtime("thread_1"))
+
+        assert out is not None
+        assert out["tool_artifacts"][0]["handle"] == generate_handle("thread_1", "call_1", 0)

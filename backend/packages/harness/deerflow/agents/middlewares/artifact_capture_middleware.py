@@ -17,6 +17,7 @@ from typing import Any, cast, override
 from langchain.agents import AgentState
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import AIMessage, ToolMessage
+from langgraph.config import get_config
 from langgraph.runtime import Runtime
 
 from deerflow.agents.thread_state import ArtifactEntry
@@ -82,6 +83,15 @@ class ArtifactCaptureMiddleware(AgentMiddleware[AgentState]):
     def _thread_id(self, runtime: Runtime | None) -> str:
         context = getattr(runtime, "context", None)
         tid = context.get("thread_id") if isinstance(context, dict) else None
+        if not tid:
+            # An SDK caller steers the thread through RunnableConfig, the same
+            # carrier ThreadDataMiddleware accepts; runtime context is absent
+            # there, so reads that only look at it capture nothing at all.
+            try:
+                tid = (get_config().get("configurable") or {}).get("thread_id")
+            except RuntimeError:
+                # Standalone hook callers run the middleware with no Runnable context.
+                tid = None
         return str(tid) if tid else ""
 
     def _capture(self, state: AgentState, runtime: Runtime | None) -> dict | None:
