@@ -14,7 +14,7 @@ REPO_ROOT = BACKEND_ROOT.parent
 # Providers whose SDK is a harness extra, so the published image needs the same
 # name as a backend extra for `docker build --build-arg UV_EXTRAS=<name>` to
 # resolve against uv.lock. See the `opensandbox` extra in the harness pyproject.
-REMOTE_SANDBOX_EXTRAS = ("opensandbox", "boxlite", "tenki")
+REMOTE_SANDBOX_EXTRAS = ("opensandbox", "boxlite", "tenki", "boxd")
 
 
 def test_boxlite_is_optional_harness_dependency() -> None:
@@ -39,6 +39,18 @@ def test_opensandbox_is_optional_harness_dependency() -> None:
 
     assert not any(dep.startswith("opensandbox") for dep in core_dependencies)
     assert optional_dependencies["opensandbox"] == ["opensandbox>=0.1.15,<0.2.0"]
+
+
+def test_boxd_is_optional_harness_dependency() -> None:
+    """The boxd SDK should be installed only when its provider is selected."""
+    pyproject_path = Path(__file__).resolve().parents[1] / "packages" / "harness" / "pyproject.toml"
+    pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+
+    core_dependencies = pyproject["project"]["dependencies"]
+    optional_dependencies = pyproject["project"]["optional-dependencies"]
+
+    assert not any(dep.startswith("boxd") for dep in core_dependencies)
+    assert optional_dependencies["boxd"] == ["boxd>=0.3.2"]
 
 
 @pytest.mark.parametrize("extra", REMOTE_SANDBOX_EXTRAS)

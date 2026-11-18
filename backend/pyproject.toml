@@ -58,6 +58,7 @@ memory-zh = ["deerflow-harness[memory-zh]"]
 opensandbox = ["deerflow-harness[opensandbox]"]
 boxlite = ["deerflow-harness[boxlite]"]
 tenki = ["deerflow-harness[tenki]"]
+boxd = ["deerflow-harness[boxd]"]
 
 [dependency-groups]
 # Managed extension packages are added here by `deerflow extensions install`.
